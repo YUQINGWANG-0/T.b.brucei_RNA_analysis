@@ -1,0 +1,180 @@
+############################
+#######QUALITY CHECHK#######
+############################
+
+######copy all the files needed from original directory 
+######to current working directory
+
+mkdir ~/First_assignment2
+cd /localdisk/data/BPSM/Assignment1/Tbb_genome
+cp Tb927_genome.fasta.gz ~/First_assignment2
+cd ..
+cp Tbbgenes.bed ~/First_assignment2
+cd /localdisk/data/BPSM/Assignment1/fastq
+cp fqfiles ~/First_assignment2
+cp *.fq.gz ~/First_assignment2
+cd ~/First_assignment2
+
+######quality check using fastqc on all the
+######pair-end raw sequence data
+
+for f in *.fq.gz;
+do fastqc --outdir ~/First_assignment2 -t 4 $f;
+done
+
+######perform analysis on the output using zipfiles
+######find all the outputs with WARN or FAIL and store them in the badquality.txt
+######find the length and name for all the sequence and store them in the basicinfo.txt
+
+mkdir zipFile
+rm -f *.html
+mv *.zip ./zipFile
+cd  ~/First_assignment2/zipFile
+for zip in *.zip
+do
+unzip -p ${zip} ${zip::-4}/summary.txt >>summaries.txt
+unzip -p ${zip} ${zip::-4}/fastqc_data.txt>>data.txt
+done
+cat summaries.txt | egrep "WARN|FAIL" summaries.txt >> badquality.txt
+cat summaries.txt | egrep "Sequence length|Filenam" data.txt >> basicinfo.txt
+
+cat badquality.txt
+cat basicinfo.txt
+
+######aske the user to check the quelity and decide whether to go on
+
+echo "The quality of raw sequence data is shown above"
+echo "Do you still want to move on to alignance? "
+echo "YES/NO"
+read input
+if test $input == "NO"
+then
+ echo "raw file quality failed the test"
+ echo "analyse over"
+ exit 
+else
+ echo "now begins read pairs alignment"
+fi 
+
+############################
+##########BOWTIE############
+############################
+
+######create bowtie database
+cd ..
+gunzip Tb927_genome.fasta.gz
+
+bowtie2-build Tb927_genome.fasta database
+ls
+bowtie2-inspect -n database
+export BOWTIE2_INDEXES=~/First_assignment2
+cp *.bt2 $BOWTIE2_INDEXES
+
+#####align read pairs using bowtie2
+while read  a b c d
+do
+bowtie2 -p 40 -x database -1 $c -2 $d  --no-unal  -S $a.sam
+done < fqfiles
+
+######convert it to bam format
+######sort the bam file
+
+for i in *.sam; do
+  sams=$(echo "$i" | rev | cut -c 5- | rev)
+  samtools view -b -S ${sams}.sam > ${sams}.bam
+  samtools sort ${sams}.bam -o ${sams}.bam_sorted.bam > ${sams}.bam_sorted.bam
+  samtools index ${sams}.bam_sorted.bam 
+done
+
+
+######################################
+########generate_counts_data##########
+######################################
+
+for i in *.bam_sorted.bam
+do
+rp=$(echo "$i"| rev | cut -c 16- | rev)
+bedtools coverage -a Tbbgenes.bed -b ${rp}.bam_sorted.bam > ${rp}.txt
+done
+
+#######################################
+##########output_file##################
+#######################################
+
+######change the fqfiles into tab-delimited
+awk '{print $1,$2,$3,$4;}' fqfiles > sfqfiles
+
+######group the slender/stumpy bam_output files
+while read name type f1 f2
+do
+if test $type == "Slender"
+then
+mv ${name}.txt slender.${name}.txt
+else
+mv ${name}.txt stumpy.${name}.txt
+fi
+done < sfqfiles
+
+######create the mean file for slender
+for i in slender.*.txt
+do
+cut -f 4,7 $i > ${i::-5}.output.txt
+paste -s ${i::-5}.output.txt >> overall_slender.txt
+done
+
+awk '{for (i=2; i<=NF; i+=2) $i="\t" }1' overall_slender.txt | head -1 > test.txt
+awk '{for (i=1; i<=NF; i+=2) $i="\t" }1' overall_slender.txt > test2.txt
+cut  -f 2- test2.txt > cuttest2.txt
+cat cuttest2.txt | awk '{FS="\t"; for (i=1;i<=NF;i++){a[i]+=$i;}} END {for (i=1;i<=NF;i++){printf "%.0f", a[i]/NR; printf "\t"};printf "\n"}' > slender_mean.txt
+
+######create the mean file for stumpy
+for i in stumpy.*.txt
+do
+cut -f 4,7 $i > ${i::-5}.output.txt
+paste -s ${i::-5}.output.txt >> overall_stumpy.txt
+done
+
+awk '{for (i=1; i<=NF; i+=2) $i="\t" }1' overall_stumpy.txt > stumpy_test2.txt
+cut  -f 2- stumpy_test2.txt > stumpy_cuttest2.txt
+cat stumpy_cuttest2.txt | awk '{FS="\t"; for (i=1;i<=NF;i++){a[i]+=$i;}} END {for (i=1;i<=NF;i++){printf "%.0f", a[i]/NR; printf "\t"};printf "\n"}' > stumpy_mean.txt
+
+######create the final output file
+######change the line-format into coloumn-format
+paste -s test.txt slender_mean.txt stumpy_mean.txt > output.txt 
+awk ' {
+    for (i=1; i<=NF; i++)  {
+        a[NR,i] = $i
+    } } NF>p { p = NF } END {
+    for(j=1; j<=p; j++) {
+        str=a[1,j]
+        for(i=2; i<=NR; i++){
+            str=str" "a[i,j];
+        }
+	print str
+    } }' output.txt > final_output.txt
+
+######add column name and make sure it's tab deliminated
+echo -e 'gene_name' 'slender' 'stumpy' | cat - final_output.txt > temp && mv temp final_output.txt
+awk '{ print $1,$2,$3;}' OFS='\t' final_output.txt > final_output_t.txt
+
+echo -e "Counts means have benn generated"
+echo -e "Do you want to see the result file now?"
+echo -e "YES/NO"
+read input
+
+if test $input == "YES"
+then
+ echo -e "Do you want the full text or the first lines"
+ echo -e "FULL/PART"
+ read input2
+ if test $input2 == "PART"
+  then
+  head final_output_t.txt
+ else
+  cat final_output_t.txt
+ fi
+else
+ echo -e "output file has been saved at current directory"
+ echo -e "bye :)"
+fi
+
