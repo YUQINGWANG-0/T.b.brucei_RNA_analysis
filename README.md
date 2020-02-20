@@ -1,4 +1,5 @@
 # T.b.brucei_RNA_analysis
+(only works on the University of Edinburgh Bioinformatics server)
 
 A.  Modules
 
