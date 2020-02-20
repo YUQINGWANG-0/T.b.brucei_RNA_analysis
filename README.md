@@ -8,4 +8,4 @@ A.	User interaction
 
 B.  Flowchart
 
-![picture](file:///Users/ouuhare/Desktop/%E5%9B%BE%E7%89%87%201.png)
+![](https://user-images.githubusercontent.com/46657555/74935908-0aabce00-53e1-11ea-96ee-7aa230ac5a44.png)
