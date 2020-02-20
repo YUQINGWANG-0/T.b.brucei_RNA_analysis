@@ -1,5 +1,5 @@
 # T.b.brucei_RNA_analysis
-(only works on the University of Edinburgh Bioinformatics server)
+(Only works on the University of Edinburgh Bioinformatics server. If you want to use this on your own laptop, change the directory in the first block of the code into where your raw RNA-seq are)
 
 A.  Modules
 
